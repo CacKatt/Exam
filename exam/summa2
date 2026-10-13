@@ -1,0 +1,478 @@
+#UDP  #Threading
+#Iterative DNS
+
+#root_iterative.py
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 5001
+
+
+def handle_request(data, address, server):
+    domain = data.decode()
+
+    print("Root Server received:", domain)
+
+    if domain.endswith(".com"):
+        response = "TLD"
+    else:
+        response = "NOT_FOUND"
+
+    server.sendto(response.encode(), address)
+
+
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server.bind((HOST, PORT))
+
+print("Root DNS Server running on UDP port", PORT)
+
+while True:
+    data, address = server.recvfrom(1024)
+
+    thread = threading.Thread(
+        target=handle_request,
+        args=(data, address, server)
+    )
+
+    thread.start()
+
+
+
+#tld_iterative.py
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 5002
+
+
+def handle_request(data, address, server):
+    domain = data.decode()
+
+    print("TLD Server received:", domain)
+
+    if domain == "www.example.com":
+        response = "AUTHORITATIVE"
+    else:
+        response = "NOT_FOUND"
+
+    server.sendto(response.encode(), address)
+
+
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server.bind((HOST, PORT))
+
+print("TLD DNS Server running on UDP port", PORT)
+
+while True:
+    data, address = server.recvfrom(1024)
+
+    thread = threading.Thread(
+        target=handle_request,
+        args=(data, address, server)
+    )
+
+    thread.start()
+
+
+#authoritative_iterative.py
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 5003
+
+
+dns_records = {
+    "www.example.com": "192.168.1.10",
+    "www.google.com": "142.250.183.14"
+}
+
+
+def handle_request(data, address, server):
+    domain = data.decode()
+
+    print("Authoritative Server received:", domain)
+
+    ip = dns_records.get(domain, "NOT_FOUND")
+
+    server.sendto(ip.encode(), address)
+
+
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server.bind((HOST, PORT))
+
+print("Authoritative DNS Server running on UDP port", PORT)
+
+while True:
+    data, address = server.recvfrom(1024)
+
+    thread = threading.Thread(
+        target=handle_request,
+        args=(data, address, server)
+    )
+
+    thread.start()
+
+
+
+#local_dns_iterative.py
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 5000
+
+
+def query_server(port, domain):
+
+    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    client.sendto(
+        domain.encode(),
+        (HOST, port)
+    )
+
+    response, address = client.recvfrom(1024)
+
+    client.close()
+
+    return response.decode()
+
+
+def handle_client(data, address, server):
+
+    domain = data.decode()
+
+    print("\nLocal DNS received:", domain)
+
+    # Step 1: Ask Root
+    response = query_server(5001, domain)
+
+    print("Root replied:", response)
+
+    if response != "TLD":
+        server.sendto(
+            "Domain not found".encode(),
+            address
+        )
+        return
+
+    # Step 2: Ask TLD
+    response = query_server(5002, domain)
+
+    print("TLD replied:", response)
+
+    if response != "AUTHORITATIVE":
+        server.sendto(
+            "Domain not found".encode(),
+            address
+        )
+        return
+
+    # Step 3: Ask Authoritative
+    ip = query_server(5003, domain)
+
+    print("Authoritative replied:", ip)
+
+    # Send final IP to client
+    server.sendto(ip.encode(), address)
+
+
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+server.bind((HOST, PORT))
+
+print("Local DNS Server running on UDP port", PORT)
+
+while True:
+
+    data, address = server.recvfrom(1024)
+
+    thread = threading.Thread(
+        target=handle_client,
+        args=(data, address, server)
+    )
+
+    thread.start()
+
+
+#client_iterative.py
+import socket
+
+HOST = "127.0.0.1"
+PORT = 5000
+
+client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+domain = input("Enter domain name: ")
+
+client.sendto(
+    domain.encode(),
+    (HOST, PORT)
+)
+
+response, address = client.recvfrom(1024)
+
+print("\nIP Address:", response.decode())
+
+client.close()
+
+
+
+#Recursive DNS
+
+#authoritative_recursive.py
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 6003
+
+
+dns_records = {
+    "www.example.com": "192.168.1.10",
+    "www.google.com": "142.250.183.14"
+}
+
+
+def handle_request(data, address, server):
+
+    domain = data.decode()
+
+    print("Authoritative Server received:", domain)
+
+    ip = dns_records.get(domain, "NOT_FOUND")
+
+    server.sendto(ip.encode(), address)
+
+
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+server.bind((HOST, PORT))
+
+print("Authoritative DNS Server running on UDP port", PORT)
+
+while True:
+
+    data, address = server.recvfrom(1024)
+
+    thread = threading.Thread(
+        target=handle_request,
+        args=(data, address, server)
+    )
+
+    thread.start()
+
+
+#tld_recursive.py
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 6002
+
+
+def ask_authoritative(domain):
+
+    client = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_DGRAM
+    )
+
+    client.sendto(
+        domain.encode(),
+        (HOST, 6003)
+    )
+
+    response, address = client.recvfrom(1024)
+
+    client.close()
+
+    return response.decode()
+
+
+def handle_request(data, address, server):
+
+    domain = data.decode()
+
+    print("TLD Server received:", domain)
+
+    print("TLD contacting Authoritative...")
+
+    ip = ask_authoritative(domain)
+
+    print("TLD received:", ip)
+
+    server.sendto(ip.encode(), address)
+
+
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+server.bind((HOST, PORT))
+
+print("TLD DNS Server running on UDP port", PORT)
+
+while True:
+
+    data, address = server.recvfrom(1024)
+
+    thread = threading.Thread(
+        target=handle_request,
+        args=(data, address, server)
+    )
+
+    thread.start()
+
+
+
+#root_recursive.py
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 6001
+
+
+def ask_tld(domain):
+
+    client = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_DGRAM
+    )
+
+    client.sendto(
+        domain.encode(),
+        (HOST, 6002)
+    )
+
+    response, address = client.recvfrom(1024)
+
+    client.close()
+
+    return response.decode()
+
+
+def handle_request(data, address, server):
+
+    domain = data.decode()
+
+    print("Root Server received:", domain)
+
+    print("Root contacting TLD...")
+
+    ip = ask_tld(domain)
+
+    print("Root received:", ip)
+
+    server.sendto(ip.encode(), address)
+
+
+server = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_DGRAM
+)
+
+server.bind((HOST, PORT))
+
+print("Root DNS Server running on UDP port", PORT)
+
+while True:
+
+    data, address = server.recvfrom(1024)
+
+    thread = threading.Thread(
+        target=handle_request,
+        args=(data, address, server)
+    )
+
+    thread.start()
+
+
+#local_dns_recursive.py
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 6000
+
+
+def ask_root(domain):
+
+    client = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_DGRAM
+    )
+
+    client.sendto(
+        domain.encode(),
+        (HOST, 6001)
+    )
+
+    response, address = client.recvfrom(1024)
+
+    client.close()
+
+    return response.decode()
+
+
+def handle_request(data, address, server):
+
+    domain = data.decode()
+
+    print("\nLocal DNS received:", domain)
+
+    print("Local DNS contacting Root...")
+
+    ip = ask_root(domain)
+
+    print("Local DNS received:", ip)
+
+    server.sendto(ip.encode(), address)
+
+
+server = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_DGRAM
+)
+
+server.bind((HOST, PORT))
+
+print("Local DNS Server running on UDP port", PORT)
+
+while True:
+
+    data, address = server.recvfrom(1024)
+
+    thread = threading.Thread(
+        target=handle_request,
+        args=(data, address, server)
+    )
+
+    thread.start()
+
+
+#client_recursive.py
+import socket
+
+HOST = "127.0.0.1"
+PORT = 6000
+
+client = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_DGRAM
+)
+
+domain = input("Enter domain name: ")
+
+client.sendto(
+    domain.encode(),
+    (HOST, PORT)
+)
+
+response, address = client.recvfrom(1024)
+
+print("\nIP Address:", response.decode())
+
+client.close()

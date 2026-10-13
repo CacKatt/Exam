@@ -1,0 +1,298 @@
+#CRC — Cyclic Redundancy Check
+#TCP #Single server and client
+
+#crc_client.py
+import socket
+
+
+HOST = "127.0.0.1"
+PORT = 6000
+
+
+# CRC division function
+def crc_division(data, generator):
+
+    data = list(data)
+    generator = list(generator)
+
+    for i in range(len(data) - len(generator) + 1):
+
+        if data[i] == "1":
+
+            for j in range(len(generator)):
+
+                data[i + j] = str(
+                    int(data[i + j]) ^
+                    int(generator[j])
+                )
+
+    return "".join(
+        data[-(len(generator) - 1):]
+    )
+
+
+# Create client
+client = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_STREAM
+)
+
+client.connect((HOST, PORT))
+
+
+# Get input
+data = input("Enter data: ")
+
+generator = input(
+    "Enter generator polynomial: "
+)
+
+
+# Add zeros to data
+zeros = "0" * (len(generator) - 1)
+
+data_with_zeros = data + zeros
+
+
+# Calculate CRC
+crc = crc_division(
+    data_with_zeros,
+    generator
+)
+
+
+print("CRC:", crc)
+
+
+# Create final codeword
+codeword = data + crc
+
+print("Codeword:", codeword)
+
+
+# Send codeword
+client.send(codeword.encode())
+
+# Send generator
+client.send(generator.encode())
+
+
+# Receive result
+result = client.recv(1024).decode()
+
+print("Server:", result)
+
+
+client.close()
+
+
+#crc_server.py
+import socket
+
+HOST = "127.0.0.1"
+PORT = 6000
+
+
+# Perform XOR division
+def crc_division(data, generator):
+
+    data = list(data)
+    generator = list(generator)
+
+    # Perform binary division
+    for i in range(len(data) - len(generator) + 1):
+
+        if data[i] == "1":
+
+            # XOR with generator
+            for j in range(len(generator)):
+                data[i + j] = str(
+                    int(data[i + j]) ^
+                    int(generator[j])
+                )
+
+    # Remaining bits are the CRC
+    remainder = "".join(data[-(len(generator) - 1):])
+
+    return remainder
+
+
+# Create server
+server = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_STREAM
+)
+
+server.bind((HOST, PORT))
+server.listen(1)
+
+print("CRC Server running...")
+
+conn, addr = server.accept()
+
+
+# Receive codeword
+codeword = conn.recv(1024).decode()
+
+# Receive generator
+generator = conn.recv(1024).decode()
+
+
+print("Received Codeword:", codeword)
+print("Generator:", generator)
+
+
+# Calculate remainder
+remainder = crc_division(
+    codeword,
+    generator
+)
+
+
+print("Remainder:", remainder)
+
+
+# If remainder is all zeros → no error
+if "1" not in remainder:
+
+    print("No Error")
+    conn.send("No Error".encode())
+
+else:
+
+    print("Error Detected")
+    conn.send("Error Detected".encode())
+
+
+conn.close()
+server.close()
+
+
+#CHECKSUM
+#TCP #Single server and client
+
+#checksum_server.py
+import socket
+
+HOST = "127.0.0.1"
+PORT = 5000
+
+
+# Add two binary numbers
+def binary_add(a, b):
+
+    # Convert binary strings to integers
+    result = int(a, 2) + int(b, 2)
+
+    # Convert result back to binary
+    result = bin(result)[2:]
+
+    # If result has carry, add carry to the end
+    if len(result) > 8:
+        carry = result[:-8]
+        result = result[-8:]
+
+        result = bin(
+            int(result, 2) + int(carry, 2)
+        )[2:]
+
+    return result.zfill(8)
+
+
+# Create server
+server = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_STREAM
+)
+
+server.bind((HOST, PORT))
+server.listen(1)
+
+print("Checksum Server running...")
+
+conn, addr = server.accept()
+
+
+# Receive data
+data = conn.recv(1024).decode()
+
+# Receive checksum
+checksum = conn.recv(1024).decode()
+
+print("Received Data:", data)
+print("Received Checksum:", checksum)
+
+
+# Calculate sum of data and checksum
+result = binary_add(data, checksum)
+
+print("Data + Checksum:", result)
+
+
+# If result is 11111111, no error
+if result == "11111111":
+
+    print("No Error")
+    conn.send("No Error".encode())
+
+else:
+
+    print("Error Detected")
+    conn.send("Error Detected".encode())
+
+
+conn.close()
+server.close()
+
+
+#checksum_client.py
+import socket
+
+HOST = "127.0.0.1"
+PORT = 5000
+
+
+# Create client
+client = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_STREAM
+)
+
+client.connect((HOST, PORT))
+
+
+# Enter 8-bit data
+data = input("Enter 8-bit data: ")
+
+
+# Convert data to integer
+number = int(data, 2)
+
+
+# Calculate one's complement
+checksum = (~number) & 255
+
+
+# Convert back to 8-bit binary
+checksum = bin(checksum)[2:].zfill(8)
+
+
+print("Data:", data)
+print("Checksum:", checksum)
+
+
+# Send data
+client.send(data.encode())
+
+# Send checksum
+client.send(checksum.encode())
+
+
+# Receive result
+result = client.recv(1024).decode()
+
+print("Server:", result)
+
+client.close()
+
+
